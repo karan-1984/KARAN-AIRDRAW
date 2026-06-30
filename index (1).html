@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Karan Air Draw</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<style>
+  :root{
+    --accent:#7c4dff;
+    --accent2:#00e5ff;
+    --bg-0:#06060a;
+    --bg-1:#0c0c16;
+    --glass:rgba(255,255,255,0.06);
+    --glass-border:rgba(255,255,255,0.12);
+    --text:#e9e9f5;
+    --text-dim:#9a9ab0;
+    --danger:#ff5470;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{
+    width:100%;height:100%;overflow:hidden;
+    background:var(--bg-0);
+    color:var(--text);
+    font-family:'Segoe UI',ui-sans-serif,system-ui,-apple-system,sans-serif;
+    user-select:none;
+  }
+  #app{position:fixed;inset:0;}
+
+  /* ---------------- SPLASH SCREEN ---------------- */
+  #splash{
+    position:fixed;inset:0;z-index:9999;
+    background:radial-gradient(ellipse at 50% 30%, #14142a 0%, #06060a 70%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    overflow:hidden;
+    transition:opacity .9s ease, transform .9s ease;
+  }
+  #splash.fade-out{opacity:0;transform:scale(1.06);pointer-events:none;}
+  #particles{position:absolute;inset:0;}
+  .particle{
+    position:absolute;border-radius:50%;
+    background:radial-gradient(circle, rgba(124,77,255,0.9), rgba(124,77,255,0));
+    filter:blur(1px);
+    animation:floatUp linear infinite;
+    opacity:.6;
+  }
+  @keyframes floatUp{
+    0%{transform:translateY(0) translateX(0);opacity:0;}
+    10%{opacity:.7;}
+    90%{opacity:.4;}
+    100%{transform:translateY(-120vh) translateX(20px);opacity:0;}
+  }
+  .splash-title-wrap{
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    transform:scale(.92);
+    animation:zoomIn 3.6s ease forwards;
+  }
+  @keyframes zoomIn{
+    0%{transform:scale(.92);}
+    70%{transform:scale(1);}
+    100%{transform:scale(1.0);}
+  }
+  .karan-text{
+    font-size:64px;font-weight:800;letter-spacing:4px;
+    color:#fff;
+    position:relative;
+    -webkit-text-stroke:1px rgba(255,255,255,.4);
+  }
+  .karan-text span{
+    display:inline-block;opacity:0;
+    animation:writeIn .12s ease forwards;
+    text-shadow:0 0 18px rgba(124,77,255,.6);
+  }
+  @keyframes writeIn{
+    from{opacity:0;transform:translateY(14px) rotate(-6deg);filter:blur(4px);}
+    to{opacity:1;transform:translateY(0) rotate(0);filter:blur(0);}
+  }
+  .airdraw-text{
+    margin-top:6px;font-size:26px;font-weight:300;letter-spacing:10px;
+    color:var(--accent2);
+    text-shadow:0 0 12px var(--accent2),0 0 30px rgba(0,229,255,.5);
+    opacity:0;
+    animation:neonFade 1.2s ease forwards;
+    animation-delay:1.45s;
+  }
+  @keyframes neonFade{
+    0%{opacity:0;letter-spacing:22px;}
+    100%{opacity:1;letter-spacing:10px;}
+  }
+  .sweep-wrap{position:relative;overflow:hidden;}
+  .light-sweep{
+    position:absolute;top:0;left:-150%;width:60%;height:100%;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,.5), transparent);
+    animation:sweep 2.6s ease-in-out 1;
+    animation-delay:2s;
+    transform:skewX(-20deg);
+  }
+  @keyframes sweep{
+    0%{left:-150%;}
+    100%{left:150%;}
+  }
+  .splash-sub{
+    margin-top:22px;font-size:14px;color:var(--text-dim);
+    opacity:0;animation:fadeSimple .8s ease forwards;animation-delay:2.4s;
+    letter-spacing:1px;
+  }
+  @keyframes fadeSimple{to{opacity:1;}}
+  .loading-ring{
+    margin-top:34px;width:46px;height:46px;border-radius:50%;
+    border:3px solid rgba(255,255,255,.08);
+    border-top-color:var(--accent2);
+    border-right-color:var(--accent);
+    opacity:0;
+    animation:fadeSimple .5s ease forwards, spin 1s linear infinite;
+    animation-delay:2.7s, 2.7s;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ---------------- MAIN APP ---------------- */
+  #mainApp{
+    position:fixed;inset:0;opacity:0;transition:opacity 1s ease;
+  }
+  #mainApp.visible{opacity:1;}
+  video#cameraFeed{display:none;}
+  canvas{position:absolute;inset:0;width:100%;height:100%;}
+  #bgCanvas{background:#05050a;}
+  #permanentCanvas{z-index:2;}
+  #activeCanvas{z-index:3;}
+  #cursorCanvas{z-index:4;pointer-events:none;}
+  #videoCanvas{z-index:1;opacity:0.18;filter:blur(0px) saturate(1.1);}
+
+  /* glass component */
+  .glass{
+    background:var(--glass);
+    backdrop-filter:blur(18px) saturate(160%);
+    -webkit-backdrop-filter:blur(18px) saturate(160%);
+    border:1px solid var(--glass-border);
+    border-radius:var(--radius);
+    box-shadow:0 8px 32px rgba(0,0,0,.35);
+  }
+
+  /* TOP BAR */
+  #topBar{
+    position:absolute;top:16px;left:50%;transform:translateX(-50%);
+    z-index:20;display:flex;align-items:center;gap:14px;
+    padding:10px 22px;
+    transition:opacity .3s ease, transform .3s ease;
+  }
+  #topBar.hidden{opacity:0;transform:translateX(-50%) translateY(-30px);pointer-events:none;}
+  .brand{
+    font-weight:700;font-size:16px;letter-spacing:1px;
+    background:linear-gradient(90deg,var(--accent2),var(--accent));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .stat-pill{
+    font-size:11px;color:var(--text-dim);
+    padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.08);
+    display:flex;gap:5px;align-items:center;white-space:nowrap;
+  }
+  .stat-pill b{color:var(--text);font-weight:600;}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--accent2);box-shadow:0 0 8px var(--accent2);}
+
+  /* TOOLBAR */
+  #toolbar{
+    position:absolute;left:16px;top:50%;transform:translateY(-50%);
+    z-index:20;padding:18px 14px;
+    display:flex;flex-direction:column;gap:16px;
+    max-height:90vh;overflow-y:auto;
+    width:220px;
+    transition:opacity .3s ease, transform .3s ease;
+    scrollbar-width:thin;
+  }
+  #toolbar.hidden{opacity:0;transform:translateY(-50%) translateX(-260px);pointer-events:none;}
+  #toolbar::-webkit-scrollbar{width:5px;}
+  #toolbar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:10px;}
+  .tb-section{display:flex;flex-direction:column;gap:8px;}
+  .tb-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);font-weight:600;}
+  .tb-row{display:flex;align-items:center;gap:8px;}
+  input[type=range]{
+    -webkit-appearance:none;width:100%;height:5px;border-radius:5px;
+    background:linear-gradient(90deg,var(--accent2),var(--accent));
+    outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:#fff;box-shadow:0 0 10px rgba(255,255,255,.8);cursor:pointer;
+    border:2px solid var(--accent);
+  }
+  input[type=color]{
+    -webkit-appearance:none;width:38px;height:38px;border:none;border-radius:10px;
+    background:none;cursor:pointer;padding:0;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper{padding:0;}
+  input[type=color]::-webkit-color-swatch{border:2px solid var(--glass-border);border-radius:10px;}
+
+  .preset-colors{display:flex;flex-wrap:wrap;gap:6px;}
+  .preset-color{
+    width:22px;height:22px;border-radius:50%;cursor:pointer;
+    border:2px solid rgba(255,255,255,.2);transition:transform .15s ease;
+  }
+  .preset-color:hover{transform:scale(1.2);}
+  .preset-color.active{border-color:#fff;transform:scale(1.15);}
+
+  select, .btn{
+    background:rgba(255,255,255,.06);
+    border:1px solid var(--glass-border);
+    color:var(--text);
+    border-radius:10px;
+    padding:8px 10px;
+    font-size:12px;
+    cursor:pointer;
+    transition:all .2s ease;
+    outline:none;
+  }
+  select{width:100%;}
+  .btn{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    font-weight:600;flex:1;
+  }
+  .btn:hover{background:rgba(255,255,255,.14);transform:translateY(-1px);box-shadow:0 4px 14px rgba(124,77,255,.3);}
+  .btn:active{transform:translateY(0);}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#06060a;}
+  .btn.danger:hover{background:rgba(255,84,112,.2);box-shadow:0 4px 14px rgba(255,84,112,.3);}
+  .btn-row{display:flex;gap:6px;}
+  .toggle-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .toggle-btn{
+    font-size:11px;padding:6px 9px;border-radius:8px;
+    background:rgba(255,255,255,.05);border:1px solid var(--glass-border);
+    color:var(--text-dim);cursor:pointer;transition:.2s;
+  }
+  .toggle-btn.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#06060a;font-weight:700;border:none;}
+
+  /* SHOW TOOLBAR BUTTON */
+  #showToolbarBtn{
+    position:absolute;left:16px;top:50%;transform:translateY(-50%);
+    z-index:21;width:44px;height:44px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s ease;
+    font-size:18px;
+  }
+  #showToolbarBtn.visible{opacity:1;pointer-events:all;}
+
+  /* MODE INDICATOR */
+  #modeIndicator{
+    position:absolute;bottom:20px;left:50%;transform:translateX(-50%);
+    z-index:20;padding:10px 24px;display:flex;align-items:center;gap:10px;
+    transition:.25s ease;
+  }
+  #modeIndicator .mode-icon{font-size:18px;}
+  #modeIndicator .mode-text{font-weight:700;font-size:13px;letter-spacing:.5px;}
+  #modeIndicator.draw{box-shadow:0 0 20px rgba(124,77,255,.5);}
+  #modeIndicator.erase{box-shadow:0 0 20px rgba(255,193,7,.4);}
+  #modeIndicator.pause{box-shadow:0 0 20px rgba(255,84,112,.4);}
+  #modeIndicator.idle{box-shadow:0 0 20px rgba(255,255,255,.1);}
+
+  /* DIALOGS */
+  .overlay-dialog{
+    position:fixed;inset:0;z-index:9998;
+    background:rgba(4,4,8,.7);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;transition:opacity .3s ease;
+  }
+  .overlay-dialog.visible{opacity:1;pointer-events:all;}
+  .dialog-box{
+    width:min(420px,90vw);padding:34px 30px;text-align:center;
+    transform:scale(.92);transition:transform .3s ease;
+  }
+  .overlay-dialog.visible .dialog-box{transform:scale(1);}
+  .dialog-icon{font-size:42px;margin-bottom:14px;}
+  .dialog-title{font-size:18px;font-weight:700;margin-bottom:8px;}
+  .dialog-msg{font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:20px;}
+
+  /* RIGHT mini hint panel */
+  #gestureHint{
+    position:absolute;right:16px;top:16px;z-index:20;padding:14px 16px;
+    width:170px;display:flex;flex-direction:column;gap:8px;
+    transition:opacity .3s ease, transform .3s ease;
+  }
+  #gestureHint.hidden{opacity:0;transform:translateX(40px);pointer-events:none;}
+  .hint-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim);}
+  .hint-row .hicon{font-size:16px;width:20px;text-align:center;}
+
+  ::-webkit-scrollbar{width:6px;}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:10px;}
+
+  @media (max-width:760px){
+    #toolbar{width:180px;}
+    .karan-text{font-size:42px;}
+    .airdraw-text{font-size:18px;letter-spacing:6px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ========================= SPLASH SCREEN ========================= -->
+<div id="splash">
+  <div id="particles"></div>
+  <div class="splash-title-wrap">
+    <div class="sweep-wrap">
+      <div class="karan-text" id="karanText"></div>
+      <div class="light-sweep"></div>
+    </div>
+    <div class="airdraw-text">AIR&nbsp;DRAW</div>
+    <div class="splash-sub">Made with ❤️ by Karan</div>
+    <div class="loading-ring"></div>
+  </div>
+</div>
+
+<!-- ========================= MAIN APP ========================= -->
+<div id="mainApp">
+  <div id="app">
+    <video id="cameraFeed" playsinline autoplay muted></video>
+    <canvas id="videoCanvas"></canvas>
+    <canvas id="bgCanvas"></canvas>
+    <canvas id="permanentCanvas"></canvas>
+    <canvas id="activeCanvas"></canvas>
+    <canvas id="cursorCanvas"></canvas>
+  </div>
+
+  <!-- TOP STATS BAR -->
+  <div id="topBar" class="glass">
+    <div class="brand">⚡ KARAN AIR DRAW</div>
+    <div class="stat-pill"><span class="dot"></span>FPS <b id="fpsStat">0</b></div>
+    <div class="stat-pill">Track <b id="trackFpsStat">0</b></div>
+    <div class="stat-pill">Mode <b id="modeStat">Idle</b></div>
+    <div class="stat-pill">Brush <b id="brushStat">Neon</b></div>
+    <div class="stat-pill">Size <b id="sizeStat">6</b></div>
+  </div>
+
+  <!-- GESTURE HINT -->
+  <div id="gestureHint" class="glass">
+    <div class="hint-row"><span class="hicon">☝️</span> Index → Draw</div>
+    <div class="hint-row"><span class="hicon">🖐️</span> Palm → Erase</div>
+    <div class="hint-row"><span class="hicon">✊</span> Fist → Pause</div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div id="toolbar" class="glass">
+    <div class="tb-section">
+      <div class="tb-label">Color</div>
+      <div class="tb-row">
+        <input type="color" id="colorPicker" value="#7c4dff">
+        <div class="btn-row" style="flex:1">
+          <button class="btn" id="rainbowBtn" title="Rainbow Mode">🌈</button>
+          <button class="btn" id="randomColorBtn" title="Random Color">🎲</button>
+        </div>
+      </div>
+      <div class="preset-colors" id="presetColors"></div>
+    </div>
+
+    <div class="tb-section">
+      <div class="tb-label">Brush Type</div>
+      <select id="brushSelect">
+        <option value="neon">Neon</option>
+        <option value="marker">Marker</option>
+        <option value="pen">Pen</option>
+        <option value="highlighter">Highlighter</option>
+        <option value="airbrush">Airbrush</option>
+        <option value="calligraphy">Calligraphy</option>
+        <option value="laser">Laser</option>
+      </select>
+    </div>
+
+    <div class="tb-section">
+      <div class="tb-label">Brush Size <span id="sizeVal">6</span></div>
+      <input type="range" id="sizeSlider" min="1" max="60" value="6">
+    </div>
+    <div class="tb-section">
+      <div class="tb-label">Opacity <span id="opacityVal">100</span>%</div>
+      <input type="range" id="opacitySlider" min="5" max="100" value="100">
+    </div>
+    <div class="tb-section">
+      <div class="tb-label">Glow Strength <span id="glowVal">18</span></div>
+      <input type="range" id="glowSlider" min="0" max="40" value="18">
+    </div>
+    <div class="tb-section">
+      <div class="tb-label">Glow Radius <span id="glowRadiusVal">10</span></div>
+      <input type="range" id="glowRadiusSlider" min="0" max="30" value="10">
+    </div>
+
+    <div class="tb-section">
+      <div class="tb-label">Actions</div>
+      <div class="btn-row">
+        <button class="btn" id="undoBtn" title="Ctrl+Z">↩️ Undo</button>
+        <button class="btn" id="redoBtn" title="Ctrl+Y">↪️ Redo</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn danger" id="clearBtn" title="C">🗑️ Clear</button>
+        <button class="btn primary" id="downloadBtn" title="D">⬇️ Save</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="fullscreenBtn" title="F">⛶ Full</button>
+        <button class="btn" id="hideToolbarBtn">👁️ Hide</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="showToolbarBtn" class="glass">🎨</div>
+
+  <!-- MODE INDICATOR -->
+  <div id="modeIndicator" class="glass idle">
+    <span class="mode-icon">✋</span>
+    <span class="mode-text" id="modeText">INITIALIZING</span>
+  </div>
+</div>
+
+<!-- ========================= DIALOGS ========================= -->
+<div class="overlay-dialog" id="errorDialog">
+  <div class="dialog-box glass">
+    <div class="dialog-icon" id="errorIcon">⚠️</div>
+    <div class="dialog-title" id="errorTitle">Something went wrong</div>
+    <div class="dialog-msg" id="errorMsg">An unexpected error occurred.</div>
+    <button class="btn primary" id="errorRetryBtn" style="width:100%;padding:12px;">Retry</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   KARAN AIR DRAW — Production Air Drawing Application
+   Architecture:
+     - SplashController     : intro animation sequence
+     - CameraManager         : webcam acquisition & lifecycle
+     - HandTracker            : MediaPipe Hands wrapper, smoothing
+     - GestureRecognizer     : gesture classification + debouncing
+     - BrushEngine            : brush definitions & stroke rendering
+     - CanvasRenderer        : layered canvas compositing pipeline
+     - HistoryManager        : undo/redo stack
+     - UIController            : toolbar, stats, dialogs, shortcuts
+     - PerformanceMonitor    : FPS tracking
+     - App                     : orchestrator
+   ============================================================ */
+
+/* ---------------------- Utility ---------------------- */
+const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const dist = (x1,y1,x2,y2)=>Math.hypot(x2-x1,y2-y1);
+
+/* ============================================================
+   SPLASH SCREEN
+   ============================================================ */
+class SplashController{
+  constructor(onComplete){
+    this.onComplete = onComplete;
+    this.splashEl = document.getElementById('splash');
+    this.karanTextEl = document.getElementById('karanText');
+    this._spawnParticles();
+    this._writeKaran();
+  }
+  _spawnParticles(){
+    const container = document.getElementById('particles');
+    for(let i=0;i<40;i++){
+      const p = document.createElement('div');
+      p.className='particle';
+      const size = 2+Math.random()*4;
+      p.style.width=p.style.height=size+'px';
+      p.style.left = Math.random()*100+'%';
+      p.style.top = (60+Math.random()*40)+'%';
+      p.style.animationDuration = (4+Math.random()*5)+'s';
+      p.style.animationDelay = (Math.random()*3)+'s';
+      container.appendChild(p);
+    }
+  }
+  _writeKaran(){
+    const word = "KARAN";
+    word.split('').forEach((ch,i)=>{
+      const span = document.createElement('span');
+      span.textContent = ch;
+      span.style.animationDelay = (0.15+i*0.12)+'s';
+      this.karanTextEl.appendChild(span);
+    });
+  }
+  begin(){
+    setTimeout(()=>{
+      this.splashEl.classList.add('fade-out');
+      setTimeout(()=>{
+        this.splashEl.style.display='none';
+        this.onComplete();
+      },900);
+    },3600);
+  }
+}
+
+/* ============================================================
+   CAMERA MANAGER
+   ============================================================ */
+class CameraManager{
+  constructor(videoEl){
+    this.videoEl = videoEl;
+    this.stream = null;
+  }
+  async start(){
+    try{
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video:{ width:640, height:480, frameRate:30, facingMode:'user' },
+        audio:false
+      });
+      this.videoEl.srcObject = this.stream;
+      await new Promise(res=>{ this.videoEl.onloadedmetadata = ()=>{ this.videoEl.play(); res(); }; });
+      return true;
+    }catch(err){
+      throw err;
+    }
+  }
+  stop(){
+    if(this.stream){ this.stream.getTracks().forEach(t=>t.stop()); }
+  }
+}
+
+/* ============================================================
+   HAND TRACKER  (MediaPipe Hands wrapper with smoothing)
+   ============================================================ */
+class HandTracker{
+  constructor(videoEl, onResults){
+    this.videoEl = videoEl;
+    this.onResultsCallback = onResults;
+    this.hands = null;
+    this.camera = null;
+    this.smoothedX = null;
+    this.smoothedY = null;
+    this.smoothingFactor = 0.45; // exponential smoothing
+    this.lastRawX = null;
+    this.lastRawY = null;
+    this.trackFrameCount = 0;
+    this.trackFps = 0;
+    this._trackFpsTimer = performance.now();
+  }
+  async init(){
+    this.hands = new Hands({
+      locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    this.hands.setOptions({
+      maxNumHands:1,
+      modelComplexity:1,
+      minDetectionConfidence:0.65,
+      minTrackingConfidence:0.6
+    });
+    this.hands.onResults((results)=>this._handleResults(results));
+
+    this.camera = new Camera(this.videoEl,{
+      onFrame: async ()=>{ await this.hands.send({image:this.videoEl}); },
+      width:640, height:480
+    });
+    await this.camera.start();
+  }
+  _handleResults(results){
+    this.trackFrameCount++;
+    const now = performance.now();
+    if(now - this._trackFpsTimer >= 1000){
+      this.trackFps = this.trackFrameCount;
+      this.trackFrameCount = 0;
+      this._trackFpsTimer = now;
+    }
+
+    let landmarks = null;
+    if(results.multiHandLandmarks && results.multiHandLandmarks.length>0){
+      landmarks = results.multiHandLandmarks[0];
+    }
+    this.onResultsCallback(landmarks);
+  }
+  smooth(rawX, rawY){
+    if(this.smoothedX===null){
+      this.smoothedX = rawX; this.smoothedY = rawY;
+    } else {
+      // ignore tiny accidental jitter
+      const movement = dist(rawX,rawY,this.smoothedX,this.smoothedY);
+      const factor = movement < 0.003 ? 0.08 : this.smoothingFactor;
+      this.smoothedX = lerp(this.smoothedX, rawX, factor);
+      this.smoothedY = lerp(this.smoothedY, rawY, factor);
+    }
+    return {x:this.smoothedX, y:this.smoothedY};
+  }
+}
+
+/* ============================================================
+   GESTURE RECOGNIZER
+   ============================================================ */
+const GESTURE = { NONE:'none', DRAW:'draw', ERASE:'erase', PAUSE:'pause' };
+
+class GestureRecognizer{
+  constructor(){
+    this.currentStable = GESTURE.NONE;
+    this.pendingGesture = GESTURE.NONE;
+    this.pendingSince = 0;
+    this.stabilityMs = 150;
+  }
+  classify(landmarks){
+    if(!landmarks) return GESTURE.NONE;
+
+    // Landmark indices (MediaPipe hands)
+    const tips = [4,8,12,16,20];
+    const pip  = [3,6,10,14,18];
+    const wrist = landmarks[0];
+
+    // Determine finger extension by comparing tip distance to wrist vs pip distance to wrist
+    const fingerExtended = (tipIdx, pipIdx)=>{
+      const tip = landmarks[tipIdx], p = landmarks[pipIdx];
+      const dTip = dist(tip.x,tip.y,wrist.x,wrist.y);
+      const dPip = dist(p.x,p.y,wrist.x,wrist.y);
+      return dTip > dPip * 1.15;
+    };
+
+    const indexExt  = fingerExtended(8,6);
+    const middleExt = fingerExtended(12,10);
+    const ringExt   = fingerExtended(16,14);
+    const pinkyExt  = fingerExtended(20,18);
+    // thumb handled separately (lateral distance)
+    const thumbExt = dist(landmarks[4].x,landmarks[4].y, landmarks[17].x, landmarks[17].y) >
+                      dist(landmarks[2].x,landmarks[2].y, landmarks[17].x, landmarks[17].y) * 0.9;
+
+    const extendedCount = [indexExt,middleExt,ringExt,pinkyExt].filter(Boolean).length;
+
+    if(indexExt && !middleExt && !ringExt && !pinkyExt){
+      return GESTURE.DRAW;
+    }
+    if(extendedCount>=4){
+      return GESTURE.ERASE; // open palm
+    }
+    if(extendedCount===0){
+      return GESTURE.PAUSE; // closed fist
+    }
+    return GESTURE.NONE;
+  }
+  update(landmarks){
+    const raw = this.classify(landmarks);
+    const now = performance.now();
+
+    if(raw !== this.pendingGesture){
+      this.pendingGesture = raw;
+      this.pendingSince = now;
+    }
+    if(now - this.pendingSince >= this.stabilityMs){
+      this.currentStable = this.pendingGesture;
+    }
+    return this.currentStable;
+  }
+}
+
+/* ============================================================
+   BRUSH ENGINE — definitions of how each brush type renders
+   ============================================================ */
+const BRUSHES = {
+  neon:{
+    name:'Neon',
+    render(ctx, p0, p1, opts){
+      ctx.save();
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.globalAlpha = opts.opacity;
+      ctx.shadowColor = opts.color;
+      ctx.shadowBlur = opts.glow;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(0.6, opts.width*0.35);
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.shadowBlur = opts.glow*0.6;
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = opts.width;
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.restore();
+    }
+  },
+  marker:{
+    name:'Marker',
+    render(ctx,p0,p1,opts){
+      ctx.save();
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.globalAlpha = opts.opacity*0.95;
+      ctx.shadowBlur = opts.glow*0.3;
+      ctx.shadowColor = opts.color;
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = opts.width*1.4;
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.restore();
+    }
+  },
+  pen:{
+    name:'Pen',
+    render(ctx,p0,p1,opts){
+      ctx.save();
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.globalAlpha = opts.opacity;
+      ctx.shadowBlur = opts.glow*0.15;
+      ctx.shadowColor = opts.color;
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = Math.max(1, opts.width*0.5);
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.restore();
+    }
+  },
+  highlighter:{
+    name:'Highlighter',
+    render(ctx,p0,p1,opts){
+      ctx.save();
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.globalAlpha = opts.opacity*0.35;
+      ctx.shadowBlur=0;
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = opts.width*2.4;
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.restore();
+    }
+  },
+  airbrush:{
+    name:'Airbrush',
+    render(ctx,p0,p1,opts){
+      ctx.save();
+      ctx.globalAlpha = opts.opacity*0.5;
+      ctx.shadowBlur = opts.glow*0.4;
+      ctx.shadowColor = opts.color;
+      const steps = Math.max(1, Math.floor(dist(p0.x,p0.y,p1.x,p1.y)/3));
+      for(let i=0;i<=steps;i++){
+        const t = i/steps;
+        const x = lerp(p0.x,p1.x,t) + (Math.random()-0.5)*opts.width*0.8;
+        const y = lerp(p0.y,p1.y,t) + (Math.random()-0.5)*opts.width*0.8;
+        const r = Math.random()*opts.width*0.35+0.5;
+        ctx.fillStyle = opts.color;
+        ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+  },
+  calligraphy:{
+    name:'Calligraphy',
+    render(ctx,p0,p1,opts){
+      ctx.save();
+      ctx.globalAlpha = opts.opacity;
+      ctx.shadowBlur = opts.glow*0.2;
+      ctx.shadowColor = opts.color;
+      ctx.strokeStyle = opts.color;
+      ctx.lineCap='butt';
+      const angle = Math.atan2(p1.y-p0.y, p1.x-p0.x);
+      const nibAngle = Math.PI/4;
+      ctx.lineWidth = Math.max(1, opts.width * Math.abs(Math.cos(angle-nibAngle)) + 1);
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.restore();
+    }
+  },
+  laser:{
+    name:'Laser',
+    render(ctx,p0,p1,opts){
+      ctx.save();
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.globalAlpha = opts.opacity;
+      ctx.shadowBlur = opts.glow*1.4;
+      ctx.shadowColor = opts.color;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(0.5, opts.width*0.25);
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.shadowBlur = opts.glow*0.8;
+      ctx.strokeStyle = opts.color;
+      ctx.lineWidth = opts.width*0.6;
+      ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke();
+      ctx.restore();
+    }
+  }
+};
+
+/* ============================================================
+   CANVAS RENDERER — layered compositing
+   ============================================================ */
+class CanvasRenderer{
+  constructor(){
+    this.bgCanvas = document.getElementById('bgCanvas');
+    this.permanentCanvas = document.getElementById('permanentCanvas');
+    this.activeCanvas = document.getElementById('activeCanvas');
+    this.cursorCanvas = document.getElementById('cursorCanvas');
+    this.videoCanvas = document.getElementById('videoCanvas');
+
+    this.bgCtx = this.bgCanvas.getContext('2d');
+    this.permanentCtx = this.permanentCanvas.getContext('2d');
+    this.activeCtx = this.activeCanvas.getContext('2d');
+    this.cursorCtx = this.cursorCanvas.getContext('2d');
+    this.videoCtx = this.videoCanvas.getContext('2d', {willReadFrequently:false});
+
+    this._resize();
+    window.addEventListener('resize', ()=>this._resize());
+
+    this.cursorPulse = 0;
+  }
+  _resize(){
+    const w = window.innerWidth, h = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio||1, 2);
+    [this.bgCanvas,this.permanentCanvas,this.activeCanvas,this.cursorCanvas,this.videoCanvas].forEach(c=>{
+      c.width = w*dpr; c.height = h*dpr;
+      c.style.width = w+'px'; c.style.height = h+'px';
+    });
+    [this.bgCtx,this.permanentCtx,this.activeCtx,this.cursorCtx,this.videoCtx].forEach(ctx=>{
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    });
+    this._drawBackground();
+  }
+  _drawBackground(){
+    const w = window.innerWidth, h = window.innerHeight;
+    const grad = this.bgCtx.createRadialGradient(w/2,h/2,0,w/2,h/2,Math.max(w,h)*0.7);
+    grad.addColorStop(0,'#0c0c18');
+    grad.addColorStop(1,'#050508');
+    this.bgCtx.fillStyle = grad;
+    this.bgCtx.fillRect(0,0,w,h);
+  }
+  clearActive(){
+    this.activeCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
+  }
+  drawSegment(brushKey, p0, p1, opts, permanent){
+    const ctx = permanent ? this.permanentCtx : this.activeCtx;
+    const brush = BRUSHES[brushKey] || BRUSHES.neon;
+    brush.render(ctx, p0, p1, opts);
+  }
+  mergeActiveIntoPermanent(){
+    this.permanentCtx.drawImage(this.activeCanvas, 0,0, window.innerWidth, window.innerHeight);
+    this.clearActive();
+  }
+  eraseAt(x,y,radius){
+    const ctx = this.permanentCtx;
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    const grad = ctx.createRadialGradient(x,y,0,x,y,radius);
+    grad.addColorStop(0,'rgba(0,0,0,1)');
+    grad.addColorStop(0.7,'rgba(0,0,0,0.7)');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(x,y,radius,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  clearAll(){
+    this.permanentCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
+    this.clearActive();
+  }
+  drawCursor(x,y,color,size,mode){
+    const ctx = this.cursorCtx;
+    ctx.clearRect(0,0,window.innerWidth,window.innerHeight);
+    if(x===null) return;
+    this.cursorPulse += 0.12;
+    const pulse = Math.sin(this.cursorPulse)*2;
+    ctx.save();
+    let ringColor = color;
+    if(mode===GESTURE.ERASE) ringColor = '#ffc107';
+    if(mode===GESTURE.PAUSE) ringColor = '#ff5470';
+
+    ctx.shadowColor = ringColor;
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(x,y, Math.max(6,size/2)+pulse, 0, Math.PI*2);
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(x,y, 3, 0, Math.PI*2);
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = 1;
+    ctx.fill();
+    ctx.restore();
+  }
+  exportPNG(){
+    const w = window.innerWidth, h = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio||1, 2);
+    const out = document.createElement('canvas');
+    out.width = w*dpr; out.height = h*dpr;
+    const octx = out.getContext('2d');
+    octx.fillStyle = '#06060a';
+    octx.fillRect(0,0,out.width,out.height);
+    octx.drawImage(this.permanentCanvas,0,0);
+    return out.toDataURL('image/png');
+  }
+}
+
+/* ============================================================
+   HISTORY MANAGER (undo/redo via canvas snapshots)
+   ============================================================ */
+class HistoryManager{
+  constructor(renderer){
+    this.renderer = renderer;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.maxStack = 30;
+    this.pushSnapshot(); // initial blank
+  }
+  pushSnapshot(){
+    try{
+      const data = this.renderer.permanentCanvas.toDataURL('image/png');
+      this.undoStack.push(data);
+      if(this.undoStack.length>this.maxStack) this.undoStack.shift();
+      this.redoStack = [];
+    }catch(e){}
+  }
+  undo(){
+    if(this.undoStack.length<=1) return;
+    const current = this.undoStack.pop();
+    this.redoStack.push(current);
+    const prev = this.undoStack[this.undoStack.length-1];
+    this._restore(prev);
+  }
+  redo(){
+    if(this.redoStack.length===0) return;
+    const next = this.redoStack.pop();
+    this.undoStack.push(next);
+    this._restore(next);
+  }
+  _restore(dataUrl){
+    const img = new Image();
+    img.onload = ()=>{
+      const ctx = this.renderer.permanentCtx;
+      ctx.clearRect(0,0,window.innerWidth,window.innerHeight);
+      ctx.drawImage(img,0,0,window.innerWidth,window.innerHeight);
+    };
+    img.src = dataUrl;
+  }
+}
+
+/* ============================================================
+   PERFORMANCE MONITOR
+   ============================================================ */
+class PerformanceMonitor{
+  constructor(){
+    this.frameCount=0; this.fps=0; this.lastTime=performance.now();
+  }
+  tick(){
+    this.frameCount++;
+    const now = performance.now();
+    if(now - this.lastTime >= 1000){
+      this.fps = this.frameCount;
+      this.frameCount = 0;
+      this.lastTime = now;
+    }
+  }
+}
+
+/* ============================================================
+   UI CONTROLLER
+   ============================================================ */
+const PRESET_COLORS = ['#7c4dff','#00e5ff','#ff5470','#ffc107','#00e676','#ff4081','#40c4ff','#ffffff','#ff9100','#d500f9'];
+
+class UIController{
+  constructor(app){
+    this.app = app;
+    this._cacheEls();
+    this._buildPresets();
+    this._bindEvents();
+    this.toolbarVisible = true;
+  }
+  _cacheEls(){
+    this.els = {
+      colorPicker: document.getElementById('colorPicker'),
+      presetColors: document.getElementById('presetColors'),
+      rainbowBtn: document.getElementById('rainbowBtn'),
+      randomColorBtn: document.getElementById('randomColorBtn'),
+      brushSelect: document.getElementById('brushSelect'),
+      sizeSlider: document.getElementById('sizeSlider'),
+      sizeVal: document.getElementById('sizeVal'),
+      opacitySlider: document.getElementById('opacitySlider'),
+      opacityVal: document.getElementById('opacityVal'),
+      glowSlider: document.getElementById('glowSlider'),
+      glowVal: document.getElementById('glowVal'),
+      glowRadiusSlider: document.getElementById('glowRadiusSlider'),
+      glowRadiusVal: document.getElementById('glowRadiusVal'),
+      undoBtn: document.getElementById('undoBtn'),
+      redoBtn: document.getElementById('redoBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+      downloadBtn: document.getElementById('downloadBtn'),
+      fullscreenBtn: document.getElementById('fullscreenBtn'),
+      hideToolbarBtn: document.getElementById('hideToolbarBtn'),
+      showToolbarBtn: document.getElementById('showToolbarBtn'),
+      toolbar: document.getElementById('toolbar'),
+      topBar: document.getElementById('topBar'),
+      gestureHint: document.getElementById('gestureHint'),
+      modeIndicator: document.getElementById('modeIndicator'),
+      modeText: document.getElementById('modeText'),
+      fpsStat: document.getElementById('fpsStat'),
+      trackFpsStat: document.getElementById('trackFpsStat'),
+      modeStat: document.getElementById('modeStat'),
+      brushStat: document.getElementById('brushStat'),
+      sizeStat: document.getElementById('sizeStat'),
+      errorDialog: document.getElementById('errorDialog'),
+      errorIcon: document.getElementById('errorIcon'),
+      errorTitle: document.getElementById('errorTitle'),
+      errorMsg: document.getElementById('errorMsg'),
+      errorRetryBtn: document.getElementById('errorRetryBtn'),
+    };
+  }
+  _buildPresets(){
+    PRESET_COLORS.forEach((c,i)=>{
+      const d = document.createElement('div');
+      d.className='preset-color'+(i===0?' active':'');
+      d.style.background=c;
+      d.addEventListener('click',()=>{
+        this.app.state.color = c;
+        this.app.state.rainbow = false;
+        this.app.state.randomColor = false;
+        this.els.colorPicker.value=c;
+        [...this.els.presetColors.children].forEach(ch=>ch.classList.remove('active'));
+        d.classList.add('active');
+      });
+      this.els.presetColors.appendChild(d);
+    });
+  }
+  _bindEvents(){
+    const a = this.app;
+    this.els.colorPicker.addEventListener('input',e=>{
+      a.state.color = e.target.value; a.state.rainbow=false; a.state.randomColor=false;
+    });
+    this.els.rainbowBtn.addEventListener('click',()=>{
+      a.state.rainbow = !a.state.rainbow;
+      a.state.randomColor=false;
+      this.els.rainbowBtn.classList.toggle('primary', a.state.rainbow);
+    });
+    this.els.randomColorBtn.addEventListener('click',()=>{
+      a.state.randomColor = !a.state.randomColor;
+      a.state.rainbow=false;
+      this.els.randomColorBtn.classList.toggle('primary', a.state.randomColor);
+    });
+    this.els.brushSelect.addEventListener('change',e=>{
+      a.state.brush = e.target.value;
+      this.els.brushStat.textContent = BRUSHES[a.state.brush].name;
+    });
+    this.els.sizeSlider.addEventListener('input',e=>{
+      a.state.size = parseInt(e.target.value);
+      this.els.sizeVal.textContent = a.state.size;
+      this.els.sizeStat.textContent = a.state.size;
+    });
+    this.els.opacitySlider.addEventListener('input',e=>{
+      a.state.opacity = parseInt(e.target.value)/100;
+      this.els.opacityVal.textContent = e.target.value;
+    });
+    this.els.glowSlider.addEventListener('input',e=>{
+      a.state.glow = parseInt(e.target.value);
+      this.els.glowVal.textContent = a.state.glow;
+    });
+    this.els.glowRadiusSlider.addEventListener('input',e=>{
+      a.state.glowRadius = parseInt(e.target.value);
+      this.els.glowRadiusVal.textContent = a.state.glowRadius;
+    });
+    this.els.undoBtn.addEventListener('click',()=>a.history.undo());
+    this.els.redoBtn.addEventListener('click',()=>a.history.redo());
+    this.els.clearBtn.addEventListener('click',()=>{ a.renderer.clearAll(); a.history.pushSnapshot(); });
+    this.els.downloadBtn.addEventListener('click',()=>this.download());
+    this.els.fullscreenBtn.addEventListener('click',()=>this.toggleFullscreen());
+    this.els.hideToolbarBtn.addEventListener('click',()=>this.hideToolbar());
+    this.els.showToolbarBtn.addEventListener('click',()=>this.showToolbar());
+    this.els.errorRetryBtn.addEventListener('click',()=>{ this.hideError(); a.start(); });
+
+    window.addEventListener('keydown',(e)=>{
+      if(e.ctrlKey && e.key.toLowerCase()==='z'){ e.preventDefault(); a.history.undo(); }
+      else if(e.ctrlKey && e.key.toLowerCase()==='y'){ e.preventDefault(); a.history.redo(); }
+      else if(e.key.toLowerCase()==='c'){ a.renderer.clearAll(); a.history.pushSnapshot(); }
+      else if(e.key.toLowerCase()==='d'){ this.download(); }
+      else if(e.key.toLowerCase()==='f'){ this.toggleFullscreen(); }
+      else if(e.code==='Space'){ e.preventDefault(); a.state.manualPause = !a.state.manualPause; }
+    });
+  }
+  download(){
+    const url = this.app.renderer.exportPNG();
+    const link = document.createElement('a');
+    link.download = `karan-air-draw-${Date.now()}.png`;
+    link.href = url;
+    link.click();
+  }
+  toggleFullscreen(){
+    if(!document.fullscreenElement){ document.documentElement.requestFullscreen().catch(()=>{}); }
+    else{ document.exitFullscreen().catch(()=>{}); }
+  }
+  hideToolbar(){
+    this.els.toolbar.classList.add('hidden');
+    this.els.topBar.classList.add('hidden');
+    this.els.gestureHint.classList.add('hidden');
+    this.els.showToolbarBtn.classList.add('visible');
+    this.toolbarVisible=false;
+  }
+  showToolbar(){
+    this.els.toolbar.classList.remove('hidden');
+    this.els.topBar.classList.remove('hidden');
+    this.els.gestureHint.classList.remove('hidden');
+    this.els.showToolbarBtn.classList.remove('visible');
+    this.toolbarVisible=true;
+  }
+  updateStats(fps, trackFps, mode, brush, size){
+    this.els.fpsStat.textContent = fps;
+    this.els.trackFpsStat.textContent = trackFps;
+    this.els.modeStat.textContent = mode;
+    this.els.brushStat.textContent = brush;
+    this.els.sizeStat.textContent = size;
+  }
+  setModeIndicator(mode){
+    const el = this.els.modeIndicator;
+    el.classList.remove('draw','erase','pause','idle');
+    let icon='✋', text='IDLE';
+    if(mode===GESTURE.DRAW){ icon='☝️'; text='DRAWING'; el.classList.add('draw'); }
+    else if(mode===GESTURE.ERASE){ icon='🖐️'; text='ERASING'; el.classList.add('erase'); }
+    else if(mode===GESTURE.PAUSE){ icon='✊'; text='PAUSED'; el.classList.add('pause'); }
+    else { el.classList.add('idle'); }
+    el.querySelector('.mode-icon').textContent = icon;
+    this.els.modeText.textContent = text;
+  }
+  showError(icon,title,msg){
+    this.els.errorIcon.textContent = icon;
+    this.els.errorTitle.textContent = title;
+    this.els.errorMsg.textContent = msg;
+    this.els.errorDialog.classList.add('visible');
+  }
+  hideError(){
+    this.els.errorDialog.classList.remove('visible');
+  }
+}
+
+/* ============================================================
+   APP ORCHESTRATOR
+   ============================================================ */
+class App{
+  constructor(){
+    this.videoEl = document.getElementById('cameraFeed');
+    this.renderer = new CanvasRenderer();
+    this.history = new HistoryManager(this.renderer);
+    this.ui = new UIController(this);
+    this.perf = new PerformanceMonitor();
+    this.gestureRecognizer = new GestureRecognizer();
+    this.camera = new CameraManager(this.videoEl);
+
+    this.state = {
+      color:'#7c4dff', brush:'neon', size:6, opacity:1, glow:18, glowRadius:10,
+      rainbow:false, randomColor:false, manualPause:false,
+      lastPoint:null, isDrawing:false, hueShift:0,
+    };
+
+    this.handTracker = null;
+    this._rafId = null;
+    this._needsHistorySnapshot = false;
+  }
+
+  async start(){
+    try{
+      await this.camera.start();
+    }catch(err){
+      this.ui.showError('🚫','Camera Access Denied','Karan Air Draw needs webcam access to track your hand. Please allow camera permission and retry.');
+      return;
+    }
+
+    try{
+      this.handTracker = new HandTracker(this.videoEl, (landmarks)=>this._onHandResults(landmarks));
+      await this.handTracker.init();
+    }catch(err){
+      this.ui.showError('⚙️','Hand Tracking Failed to Load','Could not initialize MediaPipe Hands. Check your internet connection and retry.');
+      return;
+    }
+
+    this._mirrorVideoLoop();
+    this._renderLoop();
+  }
+
+  _mirrorVideoLoop(){
+    const draw = ()=>{
+      if(this.videoEl.readyState>=2){
+        const ctx = this.renderer.videoCtx;
+        const w = window.innerWidth, h = window.innerHeight;
+        ctx.save();
+        ctx.translate(w,0); ctx.scale(-1,1);
+        ctx.drawImage(this.videoEl,0,0,w,h);
+        ctx.restore();
+      }
+      requestAnimationFrame(draw);
+    };
+    draw();
+  }
+
+  _onHandResults(landmarks){
+    let mode = this.gestureRecognizer.update(landmarks);
+    if(this.state.manualPause) mode = GESTURE.PAUSE;
+
+    if(!landmarks){
+      this.state.lastPoint = null;
+      if(this.state.isDrawing){ this._finishStroke(); }
+      this.ui.setModeIndicator(GESTURE.NONE);
+      this.currentMode = GESTURE.NONE;
+      this._cursorPos = null;
+      return;
+    }
+
+    const tip = landmarks[8]; // index fingertip
+    // mirror x because video is mirrored
+    const rawX = (1 - tip.x);
+    const rawY = tip.y;
+    const smoothed = this.handTracker.smooth(rawX, rawY);
+    const x = smoothed.x * window.innerWidth;
+    const y = smoothed.y * window.innerHeight;
+    this._cursorPos = {x,y};
+    this.currentMode = mode;
+    this.ui.setModeIndicator(mode);
+
+    if(mode===GESTURE.DRAW){
+      this._handleDraw(x,y);
+    } else if(mode===GESTURE.ERASE){
+      if(this.state.isDrawing) this._finishStroke();
+      this.renderer.eraseAt(x,y, Math.max(20, this.state.size*3));
+      this._needsHistorySnapshot = true;
+      this.state.lastPoint = null;
+    } else if(mode===GESTURE.PAUSE){
+      if(this.state.isDrawing) this._finishStroke();
+      this.state.lastPoint = null;
+    } else {
+      if(this.state.isDrawing) this._finishStroke();
+      this.state.lastPoint = null;
+    }
+  }
+
+  _currentColor(){
+    if(this.state.rainbow){
+      this.state.hueShift = (this.state.hueShift + 2) % 360;
+      return `hsl(${this.state.hueShift}, 100%, 60%)`;
+    }
+    if(this.state.randomColor && !this.state._heldRandom){
+      this.state._heldRandom = `hsl(${Math.random()*360},90%,60%)`;
+    }
+    if(this.state.randomColor) return this.state._heldRandom;
+    return this.state.color;
+  }
+
+  _handleDraw(x,y){
+    const last = this.state.lastPoint;
+    const now = performance.now();
+
+    if(!last){
+      this.state.lastPoint = {x,y,t:now};
+      this.state.isDrawing = true;
+      return;
+    }
+
+    const d = dist(last.x,last.y,x,y);
+    const dt = Math.max(1, now-last.t);
+    const speed = d/dt; // px per ms
+
+    // pressure simulation: slow = thick, fast = thin
+    const speedFactor = clamp(1 - speed*8, 0.35, 1.6);
+    const dynamicWidth = clamp(this.state.size * speedFactor, 1, 80);
+
+    const color = this.state.randomColor ? this.state._heldRandom : this._currentColor();
+
+    const opts = {
+      color: color,
+      width: dynamicWidth,
+      opacity: this.state.opacity,
+      glow: this.state.glow + this.state.glowRadius,
+    };
+
+    // interpolate between points for smooth curve at high speed
+    const steps = Math.max(1, Math.min(8, Math.floor(d/2)));
+    let prev = last;
+    for(let i=1;i<=steps;i++){
+      const t = i/steps;
+      const ix = lerp(last.x,x,t);
+      const iy = lerp(last.y,y,t);
+      this.renderer.drawSegment(this.state.brush, prev, {x:ix,y:iy}, opts, false);
+      prev = {x:ix,y:iy};
+    }
+
+    this.state.lastPoint = {x,y,t:now};
+    this.state.isDrawing = true;
+  }
+
+  _finishStroke(){
+    if(this.state.isDrawing){
+      this.renderer.mergeActiveIntoPermanent();
+      this.state.isDrawing = false;
+      this.state.lastPoint = null;
+      this.state._heldRandom = null;
+      this._needsHistorySnapshot = true;
+    }
+  }
+
+  _renderLoop(){
+    const loop = ()=>{
+      this.perf.tick();
+
+      if(this._needsHistorySnapshot){
+        this.history.pushSnapshot();
+        this._needsHistorySnapshot = false;
+      }
+
+      if(this._cursorPos && this.currentMode !== GESTURE.NONE){
+        this.renderer.drawCursor(this._cursorPos.x, this._cursorPos.y, this.state.color, this.state.size, this.currentMode);
+      } else {
+        this.renderer.drawCursor(null,null,null,null,null);
+      }
+
+      this.ui.updateStats(
+        this.perf.fps,
+        this.handTracker ? this.handTracker.trackFps : 0,
+        (this.currentMode||GESTURE.NONE).toUpperCase(),
+        BRUSHES[this.state.brush].name,
+        this.state.size
+      );
+
+      this._rafId = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+}
+
+/* ============================================================
+   BOOTSTRAP
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', ()=>{
+  const mainApp = document.getElementById('mainApp');
+  const splash = new SplashController(()=>{
+    mainApp.classList.add('visible');
+    const app = new App();
+    app.start();
+  });
+  splash.begin();
+});
+
+window.addEventListener('error', (e)=>{
+  console.error('Karan Air Draw runtime error:', e.error || e.message);
+});
+</script>
+</body>
+</html>
